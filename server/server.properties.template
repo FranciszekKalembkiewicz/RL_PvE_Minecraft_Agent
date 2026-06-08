@@ -1,0 +1,10 @@
+# Skopiuj do server.properties po pierwszym uruchomieniu Paper
+online-mode=false
+max-players=5
+gamemode=survival
+difficulty=normal
+spawn-monsters=true
+pvp=true
+view-distance=10
+simulation-distance=8
+motd=Minecraft RL Wave Arena

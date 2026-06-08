@@ -1,0 +1,75 @@
+# Copy to configs/waves.yaml and set your Minecraft username.
+# Sync mob_types with server/plugins/WaveArena/config.yml
+
+minecraft_version: "1.20.4"
+
+arena:
+  world: "world"
+  center:
+    x: 0.5
+    y: 63.0
+    z: 0.5
+  radius: 9.5
+  max_mobs: 12
+
+agent:
+  username: "YOUR_MINECRAFT_USERNAME"
+  max_hp: 20.0
+
+bridge:
+  host: "127.0.0.1"
+  port: 5555
+  step_ticks: 2
+  connect_timeout_sec: 60.0
+
+wave:
+  inter_wave_pause_ticks: 40
+  wave_timeout_sec: 120
+  heal_between_waves: true
+  mob_types:
+    - ZOMBIE
+    - CREEPER
+    - SKELETON
+  mob_counts: [1, 5, 8, 10, 12, 12, 12, 12, 12, 12]
+
+spawn_slots:
+  - { x: 10.0, y: 63.0, z: 0.5 }
+  - { x: 8.73, y: 63.0, z: 5.25 }
+  - { x: 5.25, y: 63.0, z: 8.73 }
+  - { x: 0.5, y: 63.0, z: 10.0 }
+  - { x: -4.25, y: 63.0, z: 8.73 }
+  - { x: -7.73, y: 63.0, z: 5.25 }
+  - { x: -9.0, y: 63.0, z: 0.5 }
+  - { x: -7.73, y: 63.0, z: -4.25 }
+  - { x: -4.25, y: 63.0, z: -7.73 }
+  - { x: 0.5, y: 63.0, z: -9.0 }
+  - { x: 5.25, y: 63.0, z: -7.73 }
+  - { x: 8.73, y: 63.0, z: -4.25 }
+
+rewards:
+  approach_coef: 0.05
+  combat_band_min: 2.0
+  combat_band_max: 3.0
+  combat_band_bonus: 0.03
+  melee_threat_range: 1.8
+  ranged_threat_range: 8.0
+  danger_buffer: 0.2
+  danger_penalty_coef: 0.04
+  threat_ranges:
+    CREEPER: 3.0
+    ZOMBIE: 1.8
+    SKELETON: 8.0
+  hit_reward: 1.0
+  kill_bonus: 3.0
+  wave_clear_base: 10.0
+  wave_clear_speed_bonus: 5.0
+  death_penalty: -10.0
+  step_penalty_per_mob: 0.005
+
+training:
+  max_wave_train: 1
+  max_wave_eval: 10
+  total_timesteps: 500000
+  n_envs: 1
+  eval_freq: 5000
+  checkpoint_freq: 25000

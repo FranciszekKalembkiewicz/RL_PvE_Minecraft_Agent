@@ -1,0 +1,14 @@
+name: WaveArena
+version: '${project.version}'
+main: pl.pwr.rl.wavearena.WaveArenaPlugin
+api-version: '1.20'
+description: Wave-based PvE arena for Minecraft RL
+author: RL Project
+commands:
+  wavearena:
+    description: Wave arena control
+    usage: /wavearena <reset|next|status|bridge>
+    permission: wavearena.admin
+permissions:
+  wavearena.admin:
+    default: op

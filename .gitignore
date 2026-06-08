@@ -1,0 +1,41 @@
+__pycache__/
+*.py[cod]
+.env
+.venv/
+checkpoints/
+logs/
+*.zip
+
+# Local personal configs (copy from *.example.*)
+configs/waves.yaml
+server/plugins/WaveArena/config.yml
+
+# Internal dev notes (local paths, personal workflow)
+docs/HANDOFF.md
+
+# Paper server runtime / personal data
+server/paper-*.jar
+server/world/
+server/world_nether/
+server/world_the_end/
+server/logs/
+server/cache/
+server/libraries/
+server/versions/
+server/usercache.json
+server/ops.json
+server/whitelist.json
+server/banned-ips.json
+server/banned-players.json
+server/.console_history
+server/server.properties
+server/eula.txt
+server/config/
+server/spigot.yml
+server/bukkit.yml
+server/commands.yml
+server/version_history.json
+server/plugins/bStats/
+server/plugins/*.jar
+!server/plugins/WaveArena/
+server/plugins/WaveArena/target/

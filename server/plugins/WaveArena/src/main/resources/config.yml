@@ -1,0 +1,45 @@
+# Domyślny config (kopia waves — arena 21x21 przy spawnie)
+
+bridge-port: 5555
+step-ticks: 2
+wave-timeout-sec: 120
+inter-wave-pause-ticks: 40
+heal-between-waves: true
+max-waves: 10
+agent-username: YOUR_MINECRAFT_USERNAME
+agent-max-hp: 20.0
+attack-range: 3.0
+attack-damage: 4.5
+move-speed: 0.35
+real-fight:
+  enabled: false
+  attack-cooldown-ticks: 20
+  turn-cooldown-ticks: 20
+
+arena:
+  world: world
+  center-x: 0.5
+  center-y: 63.0
+  center-z: 0.5
+  radius: 9.5
+
+mob-counts: [1, 5, 8, 10, 12, 12, 12, 12, 12, 12]
+
+mob-types:
+  - ZOMBIE
+  - CREEPER
+  - SKELETON
+
+spawn-slots:
+  - { x: 10.0, y: 63.0, z: 0.5 }
+  - { x: 8.73, y: 63.0, z: 5.25 }
+  - { x: 5.25, y: 63.0, z: 8.73 }
+  - { x: 0.5, y: 63.0, z: 10.0 }
+  - { x: -4.25, y: 63.0, z: 8.73 }
+  - { x: -7.73, y: 63.0, z: 5.25 }
+  - { x: -9.0, y: 63.0, z: 0.5 }
+  - { x: -7.73, y: 63.0, z: -4.25 }
+  - { x: -4.25, y: 63.0, z: -7.73 }
+  - { x: 0.5, y: 63.0, z: -9.0 }
+  - { x: 5.25, y: 63.0, z: -7.73 }
+  - { x: 8.73, y: 63.0, z: -4.25 }
