@@ -3,6 +3,7 @@ package pl.pwr.rl.wavearena;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 
@@ -118,6 +119,19 @@ public class BridgeServer implements Runnable {
                 yield buildState(true, null);
             }
             case "status" -> buildState(true, null);
+            case "reload" -> {
+                plugin.getArenaConfig().reload();
+                JsonObject o = buildState(true, null);
+                o.addProperty("config_reloaded", true);
+                o.addProperty("skeleton_face_target", plugin.getArenaConfig().skeletonFaceTarget);
+                o.addProperty("skeleton_move_toward", plugin.getArenaConfig().skeletonMoveTowardTarget);
+                com.google.gson.JsonArray seq = new com.google.gson.JsonArray();
+                for (EntityType t : plugin.getArenaConfig().waveMobSequence) {
+                    seq.add(t.name());
+                }
+                o.add("wave_mob_sequence", seq);
+                yield o;
+            }
             default -> {
                 JsonObject o = new JsonObject();
                 o.addProperty("ok", false);
@@ -144,7 +158,11 @@ public class BridgeServer implements Runnable {
         o.addProperty("step", wm.episodeStep);
         o.addProperty("kills_this_step", wm.killsThisStep);
         o.addProperty("damage_dealt", wm.damageDealtThisStep);
+        o.addProperty("damage_taken", wm.damageTakenThisStep);
         o.addProperty("arena_radius", cfg.radius);
+        if (wm.getCurrentWaveMobType() != null) {
+            o.addProperty("wave_mob_type", wm.getCurrentWaveMobType().name());
+        }
 
         JsonObject center = new JsonObject();
         center.addProperty("x", cfg.centerX);
@@ -161,6 +179,7 @@ public class BridgeServer implements Runnable {
             pos.addProperty("y", agent.getLocation().getY());
             pos.addProperty("z", agent.getLocation().getZ());
             o.add("agent_pos", pos);
+            o.addProperty("agent_yaw", agent.getLocation().getYaw());
         } else {
             o.addProperty("agent_hp", 0);
             o.addProperty("agent_max_hp", cfg.agentMaxHp);

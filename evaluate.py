@@ -7,6 +7,7 @@ import numpy as np
 from stable_baselines3 import PPO
 
 from env.arena_mc_env import ArenaMcEnv
+from env.dual_policy import DualModelPolicy, use_dual_models
 
 
 def _log(msg: str) -> None:
@@ -40,14 +41,21 @@ def main():
     n_episodes = int(os.environ.get("EVAL_EPISODES", "20"))
     progress_every = int(os.environ.get("EVAL_PROGRESS_EVERY", "50"))
 
-    try:
-        model_path = _resolve_model()
-    except FileNotFoundError as e:
-        _log(str(e))
-        _log("Uruchom najpierw train.py lub podaj EVAL_MODEL=ścieżka/do/modelu.zip")
-        return 1
+    dual = use_dual_models()
 
-    _log(f"Model: {model_path}")
+    if dual:
+        policy = DualModelPolicy()
+        _log(f"DUAL_MODEL=1 | melee={policy.melee_path} | ranged={policy.ranged_path}")
+    else:
+        try:
+            model_path = _resolve_model()
+        except FileNotFoundError as e:
+            _log(str(e))
+            _log("Uruchom najpierw train.py lub podaj EVAL_MODEL=ścieżka/do/modelu.zip")
+            return 1
+        _log(f"Model: {model_path}")
+        policy = PPO.load(str(model_path))
+
     _log(f"mock={mock} | epizody={n_episodes} | postęp co {progress_every} kroków")
     if not mock:
         _log(
@@ -55,8 +63,10 @@ def main():
             "Pierwszy wiersz wyniku pojawi się po ~3–8 min (koniec ep. 1)."
         )
     _log("Ładowanie sieci PPO...")
-    model = PPO.load(str(model_path))
-    _log("Tworzenie środowiska...")
+    if not dual:
+        _log("Tworzenie środowiska...")
+    else:
+        _log("Dual policy załadowana. Tworzenie środowiska...")
     env = ArenaMcEnv(mock=mock)
 
     max_waves = []
@@ -65,14 +75,19 @@ def main():
 
     for ep in range(n_episodes):
         _log(f"\n--- Epizod {ep + 1}/{n_episodes} (reset mostu...) ---")
-        obs, _ = env.reset()
+        obs, info = env.reset()
         done = False
         total_reward = 0.0
         step = 0
         last_wave = -1
 
         while not done:
-            action, _ = model.predict(obs, deterministic=True)
+            if dual:
+                action, _ = policy.predict(
+                    obs, info.get("wave_mob_type", ""), deterministic=True
+                )
+            else:
+                action, _ = policy.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, info = env.step(int(action))
             total_reward += reward
             done = terminated or truncated

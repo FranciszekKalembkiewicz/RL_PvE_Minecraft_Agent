@@ -7,7 +7,7 @@ author: RL Project
 commands:
   wavearena:
     description: Wave arena control
-    usage: /wavearena <reset|next|status|bridge>
+    usage: /wavearena <reset|next|status|bridge|reload|demo preset|demo random>
     permission: wavearena.admin
 permissions:
   wavearena.admin:

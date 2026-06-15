@@ -1,0 +1,15 @@
+# Stała kolejność mobów na falach (demo/prezentacja).
+# Pusta lista = losowy typ z mob_types na każdą falę.
+# Zsynchronizuj z server/plugins/WaveArena/config.yml → wave-mob-sequence
+
+wave_mob_sequence:
+  - SKELETON   # fala 1
+  - CREEPER    # fala 2
+  - ZOMBIE     # fala 3
+  - CREEPER    # fala 4
+  - ZOMBIE     # fala 5
+  - SKELETON   # fala 6
+  - ZOMBIE     # fala 7
+  - CREEPER    # fala 8
+  - SKELETON   # fala 9
+  - ZOMBIE     # fala 10

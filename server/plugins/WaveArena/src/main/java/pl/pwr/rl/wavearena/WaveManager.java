@@ -34,6 +34,7 @@ public class WaveManager {
     public boolean waveFailed = false;
     public int killsThisStep = 0;
     public float damageDealtThisStep = 0f;
+    public float damageTakenThisStep = 0f;
 
     private EntityType currentWaveMobType;
     private long waveStartMs = 0;
@@ -41,6 +42,8 @@ public class WaveManager {
     private BukkitTask nextWaveTask = null;
     private int lastAttackStep = -10_000;
     private int lastTurnStep = -10_000;
+    private int lastJumpStep = -10_000;
+    private float agentHpAtStepStart = 0f;
 
     public WaveManager(WaveArenaPlugin plugin, ArenaConfig config) {
         this.plugin = plugin;
@@ -99,6 +102,8 @@ public class WaveManager {
         pauseTicksRemaining = 0;
         lastAttackStep = -10_000;
         lastTurnStep = -10_000;
+        lastJumpStep = -10_000;
+        damageTakenThisStep = 0f;
 
         World world = getArenaWorld();
         if (world == null) {
@@ -141,7 +146,7 @@ public class WaveManager {
         clearArenaMobs();
 
         currentWave++;
-        currentWaveMobType = config.randomMobType();
+        currentWaveMobType = config.mobTypeForWave(currentWave);
         waveStartMs = System.currentTimeMillis();
         waveClearedThisStep = false;
         waveFailed = false;
@@ -178,6 +183,13 @@ public class WaveManager {
             if (i >= config.spawnSlots.size()) break;
             Location loc = config.spawnSlots.get(i).clone();
             loc.setWorld(world);
+
+            if (currentWaveMobType == EntityType.SKELETON) {
+                Location center = config.centerLocation(world);
+                double f = config.skeletonSpawnFactor;
+                loc.setX(center.getX() + (loc.getX() - center.getX()) * f);
+                loc.setZ(center.getZ() + (loc.getZ() - center.getZ()) * f);
+            }
 
             LivingEntity mob = (LivingEntity) world.spawnEntity(loc, currentWaveMobType);
             mob.addScoreboardTag(ArenaConfig.MOB_TAG);
@@ -244,6 +256,7 @@ public class WaveManager {
     public synchronized StepResult executeStep(int action) {
         killsThisStep = 0;
         damageDealtThisStep = 0f;
+        damageTakenThisStep = 0f;
         waveClearedThisStep = false;
         waveFailed = false;
 
@@ -262,6 +275,8 @@ public class WaveManager {
             return StepResult.ok();
         }
 
+        agentHpAtStepStart = (float) agent.getHealth();
+
         if (pauseTicksRemaining > 0) {
             pauseTicksRemaining -= config.stepTicks;
             if (pauseTicksRemaining < 0) pauseTicksRemaining = 0;
@@ -276,6 +291,8 @@ public class WaveManager {
             failEpisode();
         }
 
+        damageTakenThisStep = Math.max(0f, agentHpAtStepStart - (float) agent.getHealth());
+
         long elapsed = System.currentTimeMillis() - waveStartMs;
         if (!episodeDone && pauseTicksRemaining <= 0 && countAliveMobs() > 0
                 && elapsed > config.waveTimeoutSec * 1000L) {
@@ -286,6 +303,18 @@ public class WaveManager {
     }
 
     private void applyAction(Player agent, int action) {
+        boolean skeletonWave = currentWaveMobType == EntityType.SKELETON;
+        LivingEntity nearest = skeletonWave ? findNearestMob(agent, 64.0) : null;
+        Vector towardMob = null;
+        if (skeletonWave && nearest != null) {
+            if (config.skeletonFaceTarget) {
+                scheduleSmoothFaceSlew(agent, nearest);
+            }
+            if (config.skeletonMoveTowardTarget) {
+                towardMob = flatVectorToMob(agent, nearest);
+            }
+        }
+
         float yawRad = (float) Math.toRadians(agent.getLocation().getYaw());
         Vector forward = new Vector(-Math.sin(yawRad), 0, Math.cos(yawRad));
         Vector right = new Vector(Math.cos(yawRad), 0, Math.sin(yawRad));
@@ -293,10 +322,34 @@ public class WaveManager {
         double s = config.moveSpeed;
 
         switch (action) {
-            case 0 -> vel.add(forward.multiply(s));
-            case 1 -> vel.add(forward.multiply(-s));
-            case 2 -> vel.add(right.multiply(-s));
-            case 3 -> vel.add(right.multiply(s));
+            case 0 -> {
+                if (towardMob != null) {
+                    vel.add(towardMob.clone().multiply(s));
+                } else {
+                    vel.add(forward.multiply(s));
+                }
+            }
+            case 1 -> {
+                if (towardMob != null) {
+                    vel.add(towardMob.clone().multiply(-s));
+                } else {
+                    vel.add(forward.multiply(-s));
+                }
+            }
+            case 2 -> {
+                if (towardMob != null) {
+                    vel.add(perpendicularLeft(towardMob).multiply(s));
+                } else {
+                    vel.add(right.multiply(-s));
+                }
+            }
+            case 3 -> {
+                if (towardMob != null) {
+                    vel.add(perpendicularRight(towardMob).multiply(s));
+                } else {
+                    vel.add(right.multiply(s));
+                }
+            }
             case 4 -> {
                 if (canAttackNow()) {
                     performAttack(agent);
@@ -305,13 +358,18 @@ public class WaveManager {
             }
             case 5 -> { /* noop */ }
             case 6 -> {
-                if (agent.isOnGround()) vel.setY(0.42);
+                if (canJumpNow() && agent.isOnGround()) {
+                    vel.setY(0.42);
+                    lastJumpStep = episodeStep;
+                }
             }
             case 7 -> {
                 if (canTurnNow()) {
-                    Location loc = agent.getLocation();
-                    loc.setYaw(loc.getYaw() + 45f);
-                    agent.teleport(loc);
+                    LivingEntity aim = null;
+                    if (config.realFightEnabled && config.turnTowardTarget) {
+                        aim = findNearestMob(agent, config.attackRange + 12.0);
+                    }
+                    scheduleSmoothTurn(agent, aim);
                     lastTurnStep = episodeStep;
                 }
             }
@@ -325,9 +383,39 @@ public class WaveManager {
         }
     }
 
+    public EntityType getCurrentWaveMobType() {
+        return currentWaveMobType;
+    }
+
     private void performAttack(Player agent) {
+        LivingEntity best = findNearestMob(agent, config.attackRange);
+        if (best == null) return;
+
+        if (config.realFightEnabled && config.faceTargetOnAttack) {
+            float faceDeg = currentWaveMobType == EntityType.SKELETON
+                    ? config.skeletonAttackFaceDegrees
+                    : config.attackFaceDegrees;
+            turnTowardTarget(agent, best, faceDeg);
+        }
+
+        if (!isFacingTarget(agent, best, config.attackConeDegrees)) {
+            agent.swingMainHand();
+            return;
+        }
+
+        float hpBefore = (float) best.getHealth();
+        best.damage(config.attackDamage, agent);
+        float dealt = Math.max(0, hpBefore - (float) best.getHealth());
+        damageDealtThisStep += dealt;
+        if (best.isDead() || best.getHealth() <= 0) {
+            killsThisStep++;
+        }
+        agent.swingMainHand();
+    }
+
+    private LivingEntity findNearestMob(Player agent, double maxRange) {
         LivingEntity best = null;
-        double bestDist = config.attackRange;
+        double bestDist = maxRange;
         for (LivingEntity mob : aliveMobs()) {
             double d = mob.getLocation().distance(agent.getLocation());
             if (d <= bestDist) {
@@ -335,28 +423,128 @@ public class WaveManager {
                 best = mob;
             }
         }
-        if (best != null) {
-            float hpBefore = (float) best.getHealth();
-            best.damage(config.attackDamage, agent);
-            float dealt = Math.max(0, hpBefore - (float) best.getHealth());
-            damageDealtThisStep += dealt;
-            if (best.isDead() || best.getHealth() <= 0) {
-                killsThisStep++;
-            }
-            agent.swingMainHand();
+        return best;
+    }
+
+    private void scheduleSmoothFaceSlew(Player agent, LivingEntity target) {
+        float perTick = config.skeletonInstantFace
+                ? 180f
+                : config.skeletonFaceSlewPerTick;
+        int ticks = Math.max(1, config.stepTicks);
+        for (int i = 0; i < ticks; i++) {
+            final int delay = i;
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!agent.isOnline() || episodeDone) return;
+                if (target.isValid() && !target.isDead()) {
+                    turnTowardTarget(agent, target, perTick);
+                }
+            }, delay);
         }
+    }
+
+    private Vector flatVectorToMob(Player agent, LivingEntity mob) {
+        Vector delta = mob.getLocation().toVector().subtract(agent.getLocation().toVector());
+        delta.setY(0);
+        if (delta.lengthSquared() < 1e-6) {
+            return null;
+        }
+        return delta.normalize();
+    }
+
+    private static Vector perpendicularLeft(Vector toward) {
+        return new Vector(-toward.getZ(), 0, toward.getX()).normalize();
+    }
+
+    private static Vector perpendicularRight(Vector toward) {
+        return new Vector(toward.getZ(), 0, -toward.getX()).normalize();
+    }
+
+    private void rotateYaw(Player agent, float degrees) {
+        Location loc = agent.getLocation();
+        applyRotation(agent, loc.getYaw() + degrees, loc.getPitch());
+    }
+
+    private void applyRotation(Player agent, float yaw, float pitch) {
+        agent.setRotation(wrapDegrees(yaw), pitch);
+    }
+
+    private void scheduleSmoothTurn(Player agent, LivingEntity target) {
+        float perTick = config.turnDegreesPerTick;
+        int ticks = Math.max(1, config.stepTicks);
+        boolean toward = config.realFightEnabled && config.turnTowardTarget
+                && target != null && target.isValid() && !target.isDead();
+        for (int i = 0; i < ticks; i++) {
+            final int delay = i;
+            final LivingEntity mobRef = toward ? target : null;
+            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+                if (!agent.isOnline() || episodeDone) return;
+                if (mobRef != null && mobRef.isValid() && !mobRef.isDead()) {
+                    turnTowardTarget(agent, mobRef, perTick);
+                } else {
+                    rotateYaw(agent, config.turnDegrees > 0 ? config.turnDegrees : perTick);
+                }
+            }, delay);
+        }
+    }
+
+    private void turnTowardTarget(Player agent, LivingEntity target, float maxDegrees) {
+        Location loc = agent.getLocation();
+        Location targetLoc = target.getLocation();
+        double dx = targetLoc.getX() - loc.getX();
+        double dz = targetLoc.getZ() - loc.getZ();
+        float desiredYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float diff = wrapDegrees(desiredYaw - loc.getYaw());
+        float step = Math.max(-maxDegrees, Math.min(maxDegrees, diff));
+        applyRotation(agent, loc.getYaw() + step, loc.getPitch());
+    }
+
+    private void faceTarget(Player agent, LivingEntity target) {
+        turnTowardTarget(agent, target, config.attackFaceDegrees);
+    }
+
+    private static float wrapDegrees(float angle) {
+        float a = angle % 360f;
+        if (a >= 180f) a -= 360f;
+        if (a < -180f) a += 360f;
+        return a;
+    }
+
+    private boolean isFacingTarget(Player agent, LivingEntity target, float coneDegrees) {
+        Location agentLoc = agent.getLocation();
+        Vector toTarget = target.getLocation().toVector().subtract(agentLoc.toVector());
+        toTarget.setY(0);
+        if (toTarget.lengthSquared() < 1e-6) return true;
+        toTarget.normalize();
+
+        float yawRad = (float) Math.toRadians(agentLoc.getYaw());
+        Vector forward = new Vector(-Math.sin(yawRad), 0, Math.cos(yawRad));
+        double halfAngleRad = Math.toRadians(Math.max(10f, coneDegrees) / 2.0);
+        return forward.dot(toTarget) >= Math.cos(halfAngleRad);
     }
 
     private boolean canAttackNow() {
         if (!config.realFightEnabled) return true;
+        if (config.attackCooldownTicks <= 0) return true;
         int cdSteps = cooldownToSteps(config.attackCooldownTicks);
         return episodeStep - lastAttackStep >= cdSteps;
     }
 
     private boolean canTurnNow() {
         if (!config.realFightEnabled) return true;
+        if (currentWaveMobType == EntityType.SKELETON
+                && config.skeletonFaceTarget
+                && config.skeletonFreeTurn) {
+            return true;
+        }
+        if (config.turnCooldownTicks <= 0) return true;
         int cdSteps = cooldownToSteps(config.turnCooldownTicks);
         return episodeStep - lastTurnStep >= cdSteps;
+    }
+
+    private boolean canJumpNow() {
+        if (!config.realFightEnabled) return true;
+        int cdSteps = cooldownToSteps(config.jumpCooldownTicks);
+        return episodeStep - lastJumpStep >= cdSteps;
     }
 
     private int cooldownToSteps(int cooldownTicks) {
@@ -379,6 +567,8 @@ public class WaveManager {
 
     private void tickWaveLogic(Player agent) {
         if (pauseTicksRemaining > 0) return;
+
+        refreshMobTargets();
 
         if (currentWave > 0 && countAliveMobs() == 0) {
             handleWaveCleared(agent);

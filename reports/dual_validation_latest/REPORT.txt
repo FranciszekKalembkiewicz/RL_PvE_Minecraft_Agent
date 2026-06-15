@@ -1,0 +1,22 @@
+WALIDACJA DUAL MODEL
+==================================================
+Data: 2026-06-15T15:00:33
+Epizody: 10
+Melee:  checkpoints/final_wave_melee.zip
+Ranged: checkpoints/final_wave_ranged.zip
+
+Średnia max_wave: 3.70 ± 2.72
+Mediana: 4 | Max: 8
+Śmierci: 1/10
+Pełne 10 fal: 0/10
+
+Pokonane fale (łącznie po typie moba):
+  ZOMBIE: 19
+  CREEPER: 16
+  SKELETON: 11
+
+Śmierci po typie moba:
+  SKELETON: 1
+
+Śmierci po numerze fali:
+  fala 1: 1

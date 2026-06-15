@@ -14,7 +14,7 @@ from env.bridge_client import BridgeClient, load_config
 
 MAX_MOBS = 12
 MOB_FEATURES = 6
-AGENT_FEATURES = 3
+AGENT_FEATURES = 5
 OBS_SIZE = AGENT_FEATURES + MAX_MOBS * MOB_FEATURES
 
 
@@ -39,6 +39,11 @@ class ArenaMcEnv(gym.Env):
             self.cfg["training"].get("max_wave_train", 10)
         )
         self.rewards_cfg = self.cfg.get("rewards", {})
+        mob_override = os.environ.get("TRAIN_MOB_TYPES", "").strip()
+        if mob_override:
+            self.cfg.setdefault("wave", {})["mob_types"] = [
+                t.strip().upper() for t in mob_override.split(",") if t.strip()
+            ]
         self._mob_counts = self.cfg["wave"]["mob_counts"]
         self._mob_type_to_idx = {
             name.upper(): idx + 1
@@ -52,8 +57,14 @@ class ArenaMcEnv(gym.Env):
 
         self._client: BridgeClient | _MockBridge | None = None
         self._prev_min_dist: float | None = None
+        self._prev_agent_hp: float | None = None
+        self._prev_agent_x: float | None = None
+        self._prev_agent_z: float | None = None
         self._last_state: dict[str, Any] = {}
         self._episode_max_wave = 0
+        self._wave_start_step = 0
+        self._last_wave_num = 0
+        self._last_action = 5
 
     def _ensure_client(self) -> BridgeClient | _MockBridge:
         if self._client is None:
@@ -71,10 +82,18 @@ class ArenaMcEnv(gym.Env):
             raise RuntimeError(f"Bridge reset failed: {state.get('error', state)}")
         self._last_state = state
         self._prev_min_dist = self._min_dist_from_state(state)
+        self._prev_agent_hp = float(state.get("agent_hp", self.agent_max_hp))
+        agent_pos = state.get("agent_pos") or {}
+        self._prev_agent_x = float(agent_pos.get("x", 0))
+        self._prev_agent_z = float(agent_pos.get("z", 0))
         self._episode_max_wave = 0
+        self._wave_start_step = int(state.get("step", 0))
+        self._last_wave_num = int(state.get("wave", 0))
+        self._last_action = 5
         return self._build_obs(state), self._info_dict(state)
 
     def step(self, action: int):
+        self._last_action = int(action)
         client = self._ensure_client()
         state = client.step(int(action))
         if not state.get("ok", False) and not state.get("episode_done", False):
@@ -98,6 +117,12 @@ class ArenaMcEnv(gym.Env):
         obs = self._build_obs(state)
         info = self._info_dict(state)
         info["episode_max_wave"] = self._episode_max_wave
+
+        wave_num = int(state.get("wave", 0))
+        if wave_num != self._last_wave_num:
+            self._wave_start_step = int(state.get("step", 0))
+            self._last_wave_num = wave_num
+
         return obs, reward, terminated, truncated, info
 
     def close(self):
@@ -112,6 +137,7 @@ class ArenaMcEnv(gym.Env):
             "alive_mobs": int(state.get("alive_mobs", 0)),
             "agent_hp": float(state.get("agent_hp", 0)),
             "step": int(state.get("step", 0)),
+            "wave_mob_type": str(state.get("wave_mob_type", "")),
             "wave_cleared": bool(state.get("wave_cleared", False)),
             "wave_failed": bool(state.get("wave_failed", False)),
         }
@@ -124,39 +150,158 @@ class ArenaMcEnv(gym.Env):
         r -= float(self.rewards_cfg.get("step_penalty_per_mob", 0.005)) * alive
 
         curr_dist = self._min_dist_from_state(state)
-        if self._prev_min_dist is not None and curr_dist < self._prev_min_dist:
-            r += float(self.rewards_cfg.get("approach_coef", 0.05)) * (
-                self._prev_min_dist - curr_dist
-            )
-        self._prev_min_dist = curr_dist
-
         nearest = self._nearest_mob(state)
+        wave_type = str(state.get("wave_mob_type", "")).upper()
+        if not wave_type and nearest is not None:
+            wave_type = str(nearest[1].get("type", "")).upper()
+
+        attack_range = float(self.rewards_cfg.get("attack_range", 3.0))
+        agent = state.get("agent_pos") or {}
+        center = state.get("arena_center") or self.cfg["arena"]["center"]
+        ax, az = float(agent.get("x", center["x"])), float(agent.get("z", center["z"]))
+        movement = 0.0
+        if self._prev_agent_x is not None and self._prev_agent_z is not None:
+            movement = float(np.hypot(ax - self._prev_agent_x, az - self._prev_agent_z))
+        self._prev_agent_x = ax
+        self._prev_agent_z = az
+        prev_dist = self._prev_min_dist
+
         if nearest is not None:
             nearest_dist, nearest_mob = nearest
-            combat_min = float(self.rewards_cfg.get("combat_band_min", 2.0))
-            combat_max = float(self.rewards_cfg.get("combat_band_max", 3.0))
-            combat_bonus = float(self.rewards_cfg.get("combat_band_bonus", 0.03))
-            if combat_min <= nearest_dist <= combat_max:
-                r += combat_bonus
+            mob_type = str(nearest_mob.get("type", wave_type)).upper()
+            opt_min, opt_max = self._optimal_range(mob_type)
+            is_skeleton = mob_type == "SKELETON" or wave_type == "SKELETON"
 
-            threat_range = self._mob_threat_range(str(nearest_mob.get("type", "")))
-            danger_buffer = float(self.rewards_cfg.get("danger_buffer", 0.2))
-            danger_penalty_coef = float(self.rewards_cfg.get("danger_penalty_coef", 0.04))
-            safe_dist = threat_range + danger_buffer
-            if nearest_dist < safe_dist:
-                r -= danger_penalty_coef * (safe_dist - nearest_dist)
+            delta = (prev_dist - nearest_dist) if prev_dist is not None else 0.0
+            approach_coef = float(self.rewards_cfg.get("approach_coef", 0.05))
+            retreat_coef = float(self.rewards_cfg.get("retreat_coef", 0.06))
+
+            if is_skeleton:
+                yaw = float(state.get("agent_yaw", 0.0))
+                radius = float(state.get("arena_radius", self.radius))
+                cx, cz = float(center["x"]), float(center["z"])
+                edge = max(abs(ax - cx), abs(az - cz)) / max(radius, 1e-6)
+                r += self._skeleton_reward(
+                    state,
+                    nearest_mob=nearest_mob,
+                    ax=ax,
+                    az=az,
+                    yaw=yaw,
+                    nearest_dist=nearest_dist,
+                    delta=delta,
+                    movement=movement,
+                    attack_range=attack_range,
+                    alive=alive,
+                    edge=edge,
+                    last_action=self._last_action,
+                )
+            else:
+                crowd_min = int(self.rewards_cfg.get("crowd_min_mobs", 6))
+                if prev_dist is not None:
+                    if nearest_dist > attack_range and delta > 0:
+                        r += approach_coef * delta
+                    elif nearest_dist < opt_min and delta < 0:
+                        r += retreat_coef * (-delta)
+                    elif alive >= crowd_min and delta < 0:
+                        r -= float(
+                            self.rewards_cfg.get("crowd_retreat_penalty", 0.25)
+                        ) * (-delta)
+                    else:
+                        threat = self._mob_threat_range(mob_type)
+                        if nearest_dist < threat and delta < 0:
+                            r += retreat_coef * (-delta)
+
+                if opt_min <= nearest_dist <= opt_max:
+                    r += float(self.rewards_cfg.get("combat_band_bonus", 0.05))
+
+                if nearest_dist <= attack_range:
+                    r += float(self.rewards_cfg.get("strike_range_bonus", 0.08))
+                    if float(state.get("damage_dealt", 0)) <= 0:
+                        r -= float(
+                            self.rewards_cfg.get("in_range_no_hit_penalty", 0.03)
+                        )
+
+                too_far = float(self.rewards_cfg.get("too_far_threshold", 3.2))
+                if nearest_dist > too_far:
+                    r -= float(self.rewards_cfg.get("too_far_penalty", 0.04))
+                elif nearest_dist > attack_range:
+                    r -= float(self.rewards_cfg.get("too_far_penalty", 0.04)) * 0.5
+
+                threat_range = self._mob_threat_range(mob_type)
+                danger_buffer = float(self.rewards_cfg.get("danger_buffer", 0.2))
+                danger_penalty_coef = float(
+                    self.rewards_cfg.get("danger_penalty_coef", 0.06)
+                )
+                safe_dist = threat_range + danger_buffer
+                if nearest_dist < safe_dist:
+                    r -= danger_penalty_coef * (safe_dist - nearest_dist)
+
+        self._prev_min_dist = curr_dist
+
+        edge_penalty = float(self.rewards_cfg.get("corner_penalty", 0.02))
+        radius = float(state.get("arena_radius", self.radius))
+        cx, cz = float(center["x"]), float(center["z"])
+        edge = max(abs(ax - cx), abs(az - cz)) / max(radius, 1e-6)
+        edge_thr = float(self.rewards_cfg.get("corner_edge_threshold", 0.82))
+        if edge > edge_thr:
+            r -= edge_penalty
+
+        damage_taken = float(state.get("damage_taken", 0.0))
+        if damage_taken <= 0 and self._prev_agent_hp is not None:
+            damage_taken = max(0.0, self._prev_agent_hp - float(state.get("agent_hp", 0)))
+        if damage_taken > 0:
+            dmg_pen = float(self.rewards_cfg.get("damage_taken_penalty", 0.35))
+            if nearest is not None:
+                mt = str(nearest[1].get("type", wave_type)).upper()
+                if (mt == "SKELETON" or wave_type == "SKELETON") and (
+                    prev_dist is not None and curr_dist < prev_dist
+                ):
+                    dmg_pen *= float(
+                        self.rewards_cfg.get("skeleton_approach_damage_factor", 0.35)
+                    )
+            r -= dmg_pen * damage_taken
+        self._prev_agent_hp = float(state.get("agent_hp", 0))
 
         damage = float(state.get("damage_dealt", 0))
         if damage > 0:
-            r += float(self.rewards_cfg.get("hit_reward", 1.0))
+            hit_r = float(self.rewards_cfg.get("hit_reward", 1.0))
+            if wave_type == "SKELETON" or (
+                nearest is not None
+                and str(nearest[1].get("type", wave_type)).upper() == "SKELETON"
+            ):
+                hit_r += float(self.rewards_cfg.get("skeleton_hit_bonus", 4.0))
+            r += hit_r
 
         kills = int(state.get("kills_this_step", 0))
         if kills > 0:
-            r += float(self.rewards_cfg.get("kill_bonus", 3.0)) * kills
+            kill_r = float(self.rewards_cfg.get("kill_bonus", 3.0)) * kills
+            crowd_min = int(self.rewards_cfg.get("crowd_min_mobs", 6))
+            if alive + kills >= crowd_min:
+                kill_r += float(self.rewards_cfg.get("crowd_kill_bonus", 0.0)) * kills
+            if wave_type == "SKELETON" or (
+                nearest is not None
+                and str(nearest[1].get("type", wave_type)).upper() == "SKELETON"
+            ):
+                kill_r += float(self.rewards_cfg.get("skeleton_kill_bonus", 8.0)) * kills
+            r += kill_r
 
         if state.get("wave_cleared"):
-            base = float(self.rewards_cfg.get("wave_clear_base", 10.0))
-            r += base
+            r += float(self.rewards_cfg.get("wave_clear_base", 10.0))
+            sk_clear = wave_type == "SKELETON" or (
+                nearest is not None
+                and str(nearest[1].get("type", wave_type)).upper() == "SKELETON"
+            )
+            if sk_clear:
+                steps_in_wave = max(
+                    1, int(state.get("step", 0)) - self._wave_start_step
+                )
+                target = float(
+                    self.rewards_cfg.get("skeleton_fast_clear_steps", 80)
+                )
+                if steps_in_wave < target:
+                    r += (target - steps_in_wave) * float(
+                        self.rewards_cfg.get("skeleton_fast_clear_coef", 0.2)
+                    )
 
         if state.get("wave_failed") or (
             state.get("episode_done") and state.get("agent_hp", 0) <= 0
@@ -164,6 +309,121 @@ class ArenaMcEnv(gym.Env):
             r += float(self.rewards_cfg.get("death_penalty", -10.0))
 
         return r
+
+    def _skeleton_reward(
+        self,
+        state: dict[str, Any],
+        *,
+        nearest_mob: dict[str, Any],
+        ax: float,
+        az: float,
+        yaw: float,
+        nearest_dist: float,
+        delta: float,
+        movement: float,
+        attack_range: float,
+        alive: int,
+        edge: float,
+        last_action: int = 5,
+    ) -> float:
+        """Podejdź na ~1 kratkę (nie ta sama pozycja), potem bij."""
+        r = 0.0
+        r -= float(self.rewards_cfg.get("skeleton_time_penalty", 0.12)) * alive
+
+        ideal_min = float(self.rewards_cfg.get("skeleton_ideal_min", 0.95))
+        ideal_max = float(self.rewards_cfg.get("skeleton_ideal_max", 2.0))
+        must_close = float(self.rewards_cfg.get("skeleton_must_close_dist", 2.8))
+
+        bearing_n = self._relative_bearing_norm(
+            ax, az, float(nearest_mob["x"]), float(nearest_mob["z"]), yaw
+        )
+        facing_align = 1.0 - min(abs(bearing_n - 0.5) * 2.0, 1.0)
+        face_min = float(self.rewards_cfg.get("skeleton_approach_facing_min", 0.35))
+        idle_thr = float(self.rewards_cfg.get("skeleton_idle_move_threshold", 0.06))
+        damage_dealt = float(state.get("damage_dealt", 0))
+        damage_taken = float(state.get("damage_taken", 0))
+
+        if last_action == 6:
+            if damage_taken > 0:
+                r += float(self.rewards_cfg.get("skeleton_dodge_jump_bonus", 0.08))
+            else:
+                r -= float(self.rewards_cfg.get("skeleton_jump_penalty", 0.55))
+
+        if last_action == 7 and facing_align < 0.55:
+            r += float(self.rewards_cfg.get("skeleton_turn_bonus", 0.12)) * (
+                1.0 - facing_align
+            )
+
+        # Forward — gdy za daleko od strefy ~1 kratki
+        if last_action == 0 and nearest_dist > ideal_max and facing_align >= face_min:
+            r += float(self.rewards_cfg.get("skeleton_forward_bonus", 0.35)) * (
+                0.5 + 0.5 * facing_align
+            )
+
+        if last_action in (2, 3) and nearest_dist > ideal_max and delta <= 0:
+            r -= float(self.rewards_cfg.get("skeleton_strafe_penalty", 0.45))
+
+        approach_coef = float(self.rewards_cfg.get("skeleton_approach_coef", 2.5))
+        if delta > 0 and facing_align >= face_min and nearest_dist > ideal_min:
+            r += approach_coef * delta * (0.4 + 0.6 * facing_align)
+
+        # Strefa docelowa: ~1 kratka (nie ta sama pozycja co mob)
+        if nearest_dist < ideal_min:
+            r -= float(self.rewards_cfg.get("skeleton_too_close_penalty", 0.65))
+            if delta > 0:
+                r -= float(self.rewards_cfg.get("skeleton_too_close_penalty", 0.65)) * 0.5
+        elif ideal_min <= nearest_dist <= ideal_max:
+            r += float(self.rewards_cfg.get("skeleton_ideal_range_bonus", 0.55))
+            if damage_dealt > 0:
+                r += float(self.rewards_cfg.get("skeleton_ideal_hit_bonus", 0.4))
+            if damage_dealt <= 0:
+                r -= float(
+                    self.rewards_cfg.get("skeleton_in_range_no_hit_penalty", 0.7)
+                )
+        elif nearest_dist <= attack_range:
+            r += float(self.rewards_cfg.get("skeleton_close_bonus", 0.25))
+            if delta > 0:
+                r += float(self.rewards_cfg.get("skeleton_facing_approach_bonus", 0.2))
+            if damage_dealt <= 0:
+                r -= float(
+                    self.rewards_cfg.get("skeleton_in_range_no_hit_penalty", 0.85)
+                )
+        else:
+            r -= float(self.rewards_cfg.get("skeleton_far_penalty", 0.7))
+            far_coef = float(self.rewards_cfg.get("skeleton_far_dist_coef", 0.5))
+            r -= far_coef * max(0.0, nearest_dist - attack_range)
+            if facing_align < 0.35:
+                r -= float(self.rewards_cfg.get("skeleton_back_to_mob_penalty", 1.0))
+
+        # Stoi w miejscu gdy szkielet daleko — główny problem
+        if nearest_dist > must_close:
+            if movement < idle_thr:
+                r -= float(self.rewards_cfg.get("skeleton_stand_still_penalty", 0.9))
+            elif delta <= 0:
+                r -= float(self.rewards_cfg.get("skeleton_orbit_penalty", 0.75))
+        elif nearest_dist > ideal_max and movement < idle_thr:
+            r -= float(self.rewards_cfg.get("skeleton_idle_penalty", 0.6))
+
+        edge_thr = float(self.rewards_cfg.get("skeleton_wall_edge_threshold", 0.65))
+        if edge > edge_thr and movement >= idle_thr:
+            r -= float(self.rewards_cfg.get("skeleton_wall_penalty", 0.55))
+
+        return r
+
+    def _optimal_range(self, mob_type: str) -> tuple[float, float]:
+        ranges = self.rewards_cfg.get("optimal_ranges", {})
+        if isinstance(ranges, dict) and mob_type in ranges:
+            entry = ranges[mob_type]
+            if isinstance(entry, (list, tuple)) and len(entry) >= 2:
+                return float(entry[0]), float(entry[1])
+        if mob_type == "SKELETON":
+            return 0.5, float(self.rewards_cfg.get("attack_range", 3.0))
+        if mob_type == "CREEPER":
+            return 2.5, 3.0
+        return (
+            float(self.rewards_cfg.get("combat_band_min", 2.0)),
+            float(self.rewards_cfg.get("combat_band_max", 3.0)),
+        )
 
     def _min_dist_from_state(self, state: dict[str, Any]) -> float:
         nearest = self._nearest_mob(state)
@@ -179,6 +439,18 @@ class ArenaMcEnv(gym.Env):
             if best is None or d < best[0]:
                 best = (d, mob)
         return best
+
+    @staticmethod
+    def _relative_bearing_norm(
+        ax: float, az: float, mx: float, mz: float, yaw_deg: float
+    ) -> float:
+        dx = mx - ax
+        dz = mz - az
+        if dx * dx + dz * dz < 1e-12:
+            return 0.5
+        bearing = float(np.degrees(np.arctan2(-dx, dz)))
+        rel = (bearing - yaw_deg + 180.0) % 360.0 - 180.0
+        return float(np.clip((rel + 180.0) / 360.0, 0.0, 1.0))
 
     def _mob_threat_range(self, mob_type: str) -> float:
         mt = mob_type.upper()
@@ -200,10 +472,16 @@ class ArenaMcEnv(gym.Env):
         cx, cz = float(center["x"]), float(center["z"])
         ax, az = float(agent.get("x", cx)), float(agent.get("z", cz))
 
+        yaw = float(state.get("agent_yaw", 0.0))
+        yaw_n = (yaw % 360.0) / 360.0
+        wave_type_n = self._encode_mob_type(state.get("wave_mob_type", ""))
+
         obs: list[float] = [
             float(state.get("agent_hp", 0)) / self.agent_max_hp,
             np.clip((ax - cx) / radius, -1, 1) * 0.5 + 0.5,
             np.clip((az - cz) / radius, -1, 1) * 0.5 + 0.5,
+            yaw_n,
+            wave_type_n,
         ]
 
         mobs_sorted = []
@@ -219,7 +497,9 @@ class ArenaMcEnv(gym.Env):
             dx = (float(mob["x"]) - ax) / radius
             dz = (float(mob["z"]) - az) / radius
             dist_n = min(dist / radius, 1.0)
-            angle_sin = (dz / (dist + 1e-8) + 1.0) / 2.0
+            bearing_n = self._relative_bearing_norm(
+                ax, az, float(mob["x"]), float(mob["z"]), yaw
+            )
             mob_type_n = self._encode_mob_type(mob.get("type", ""))
             obs.extend(
                 [
@@ -227,7 +507,7 @@ class ArenaMcEnv(gym.Env):
                     np.clip(dx * 0.5 + 0.5, 0, 1),
                     np.clip(dz * 0.5 + 0.5, 0, 1),
                     dist_n,
-                    angle_sin,
+                    bearing_n,
                     mob_type_n,
                 ]
             )
@@ -260,6 +540,7 @@ class _MockBridge:
         self.mobs: list[dict[str, float | str]] = []
         self.episode_done = False
         self.current_type = "ZOMBIE"
+        self._prev_hp_mock = self.agent_hp
 
     def close(self) -> None:
         pass
@@ -271,6 +552,7 @@ class _MockBridge:
         self.agent_hp = float(self.cfg["agent"]["max_hp"])
         self.episode_done = False
         self.current_type = "ZOMBIE"
+        self._prev_hp_mock = self.agent_hp
         self._spawn_wave()
         return self._state(ok=True, wave_cleared=False, kills=0, damage=0.0)
 
@@ -278,6 +560,7 @@ class _MockBridge:
         if self.episode_done:
             return self._state(ok=False, error="episode_not_active")
 
+        hp_before = self.agent_hp
         self.step_num += 1
         kills = 0
         damage = 0.0
@@ -316,6 +599,7 @@ class _MockBridge:
         if self.agent_hp <= 0:
             self.episode_done = True
 
+        self._prev_hp_mock = hp_before
         return self._state(
             ok=True,
             wave_cleared=wave_cleared,
@@ -371,6 +655,9 @@ class _MockBridge:
                 "y": float(self.center["y"]),
                 "z": float(self.center["z"]),
             },
+            "agent_yaw": 0.0,
+            "wave_mob_type": self.current_type,
+            "damage_taken": max(0.0, self._prev_hp_mock - self.agent_hp),
             "mobs": [dict(m) for m in self.mobs],
         }
         if error:

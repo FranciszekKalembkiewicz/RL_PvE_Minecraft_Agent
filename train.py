@@ -76,6 +76,11 @@ def train():
     log_dir.mkdir(exist_ok=True)
 
     max_wave = int(train_cfg.get("max_wave_train", 1))
+    mob_override = os.environ.get("TRAIN_MOB_TYPES", "").strip()
+    if mob_override:
+        types = [t.strip().upper() for t in mob_override.split(",") if t.strip()]
+        cfg.setdefault("wave", {})["mob_types"] = types
+        print(f"  TRAIN_MOB_TYPES={types} (zsynchronizuj mob-types w config.yml pluginu!)")
     print(f"\n{'='*50}")
     print(f"  Trening Wave Arena | max_wave_train={max_wave}")
     print(f"  Mock: {mock} | timesteps: {train_cfg['total_timesteps']:,}")
@@ -112,17 +117,28 @@ def train():
         eval_env.close()
         eval_env = None
 
-    resume_path = save_dir / "best" / "best_model.zip"
+    resume_path = save_dir / "final_wave.zip"
+    if not resume_path.exists():
+        resume_path = save_dir / "best" / "best_model.zip"
+    resume_override = os.environ.get("TRAIN_RESUME", "").strip()
+    if resume_override:
+        resume_path = Path(resume_override)
     force_new = os.environ.get("FORCE_NEW_MODEL", "0") == "1"
+    ppo_cfg = train_cfg.get("ppo", {})
     ppo_params = {
-        "n_steps": 512 if mock else 256,
-        "batch_size": int(os.environ.get("PPO_BATCH_SIZE", "64")),
-        "n_epochs": 10,
-        "learning_rate": 3e-4,
-        "clip_range": 0.2,
-        "ent_coef": 0.02,
-        "gamma": float(os.environ.get("PPO_GAMMA", "0.99")),
-        "gae_lambda": 0.95,
+        "n_steps": int(
+            os.environ.get(
+                "PPO_N_STEPS",
+                ppo_cfg.get("n_steps_mock" if mock else "n_steps_live", 512 if mock else 256),
+            )
+        ),
+        "batch_size": int(os.environ.get("PPO_BATCH_SIZE", ppo_cfg.get("batch_size", 128))),
+        "n_epochs": int(os.environ.get("PPO_N_EPOCHS", ppo_cfg.get("n_epochs", 10))),
+        "learning_rate": float(os.environ.get("PPO_LR", ppo_cfg.get("learning_rate", 3e-4))),
+        "clip_range": float(os.environ.get("PPO_CLIP", ppo_cfg.get("clip_range", 0.2))),
+        "ent_coef": float(os.environ.get("PPO_ENT_COEF", ppo_cfg.get("ent_coef", 0.03))),
+        "gamma": float(os.environ.get("PPO_GAMMA", ppo_cfg.get("gamma", 0.97))),
+        "gae_lambda": float(os.environ.get("PPO_GAE", ppo_cfg.get("gae_lambda", 0.95))),
         "tensorboard_log": str(log_dir),
         "verbose": 1,
     }
@@ -161,7 +177,8 @@ def train():
         progress_bar=True,
     )
 
-    final_path = save_dir / "final_wave"
+    final_name = os.environ.get("TRAIN_SAVE_AS", "final_wave").strip() or "final_wave"
+    final_path = save_dir / final_name
     model.save(str(final_path))
     print(f"\nModel zapisany: {final_path}.zip")
 

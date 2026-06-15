@@ -76,6 +76,9 @@ class BridgeClient:
     def status(self) -> dict[str, Any]:
         return self.send_command({"cmd": "status"})
 
+    def reload_config(self) -> dict[str, Any]:
+        return self.send_command({"cmd": "reload"})
+
     @classmethod
     def from_config(cls, cfg: dict[str, Any] | None = None) -> "BridgeClient":
         if cfg is None:

@@ -1,0 +1,427 @@
+{
+  "timestamp": "2026-06-15T15:00:33",
+  "n_episodes": 10,
+  "melee_model": "checkpoints/final_wave_melee.zip",
+  "ranged_model": "checkpoints/final_wave_ranged.zip",
+  "mean_max_wave": 3.7,
+  "std_max_wave": 2.72213151776324,
+  "median_max_wave": 3.5,
+  "max_max_wave": 8,
+  "deaths": 1,
+  "full_clear_10": 0,
+  "deaths_by_mob": {
+    "SKELETON": 1
+  },
+  "clears_by_mob": {
+    "CREEPER": 16,
+    "ZOMBIE": 19,
+    "SKELETON": 11
+  },
+  "death_wave_hist": {
+    "1": 1
+  },
+  "episodes": [
+    {
+      "episode": 1,
+      "max_wave": 2,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 846,
+      "reward": -1250.5,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 123
+        },
+        {
+          "wave": 2,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 342
+        },
+        {
+          "wave": 3,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 846
+        }
+      ]
+    },
+    {
+      "episode": 2,
+      "max_wave": 1,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 1110,
+      "reward": -2908.05,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 125
+        },
+        {
+          "wave": 2,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 1110
+        }
+      ]
+    },
+    {
+      "episode": 3,
+      "max_wave": 4,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 1253,
+      "reward": -688.36,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 131
+        },
+        {
+          "wave": 2,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 321
+        },
+        {
+          "wave": 3,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 572
+        },
+        {
+          "wave": 4,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 735
+        },
+        {
+          "wave": 5,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 1253
+        }
+      ]
+    },
+    {
+      "episode": 4,
+      "max_wave": 0,
+      "death_wave": 1,
+      "death_mob": "SKELETON",
+      "died": true,
+      "steps": 2401,
+      "reward": -8355.76,
+      "final_hp": 9.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "SKELETON",
+          "cleared": false,
+          "end_step": 2401
+        }
+      ]
+    },
+    {
+      "episode": 5,
+      "max_wave": 1,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 872,
+      "reward": -1430.64,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 129
+        },
+        {
+          "wave": 2,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 872
+        }
+      ]
+    },
+    {
+      "episode": 6,
+      "max_wave": 6,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 2426,
+      "reward": -3575.81,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 688
+        },
+        {
+          "wave": 2,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 896
+        },
+        {
+          "wave": 3,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1143
+        },
+        {
+          "wave": 4,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1366
+        },
+        {
+          "wave": 5,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1636
+        },
+        {
+          "wave": 6,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 1800
+        },
+        {
+          "wave": 7,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 2426
+        }
+      ]
+    },
+    {
+      "episode": 7,
+      "max_wave": 8,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 1993,
+      "reward": -403.69,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 164
+        },
+        {
+          "wave": 2,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 295
+        },
+        {
+          "wave": 3,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 458
+        },
+        {
+          "wave": 4,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 711
+        },
+        {
+          "wave": 5,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 977
+        },
+        {
+          "wave": 6,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 1141
+        },
+        {
+          "wave": 7,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1408
+        },
+        {
+          "wave": 8,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 1572
+        },
+        {
+          "wave": 9,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 1993
+        }
+      ]
+    },
+    {
+      "episode": 8,
+      "max_wave": 4,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 1384,
+      "reward": -1046.55,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 195
+        },
+        {
+          "wave": 2,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 491
+        },
+        {
+          "wave": 3,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 722
+        },
+        {
+          "wave": 4,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 886
+        },
+        {
+          "wave": 5,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 1384
+        }
+      ]
+    },
+    {
+      "episode": 9,
+      "max_wave": 3,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 1294,
+      "reward": -1806.73,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 193
+        },
+        {
+          "wave": 2,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 321
+        },
+        {
+          "wave": 3,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 550
+        },
+        {
+          "wave": 4,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 1294
+        }
+      ]
+    },
+    {
+      "episode": 10,
+      "max_wave": 8,
+      "death_wave": null,
+      "death_mob": null,
+      "died": false,
+      "steps": 2396,
+      "reward": -762.75,
+      "final_hp": 20.0,
+      "waves": [
+        {
+          "wave": 1,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 128
+        },
+        {
+          "wave": 2,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 257
+        },
+        {
+          "wave": 3,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 508
+        },
+        {
+          "wave": 4,
+          "mob_type": "CREEPER",
+          "cleared": true,
+          "end_step": 673
+        },
+        {
+          "wave": 5,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 943
+        },
+        {
+          "wave": 6,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1191
+        },
+        {
+          "wave": 7,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1443
+        },
+        {
+          "wave": 8,
+          "mob_type": "ZOMBIE",
+          "cleared": true,
+          "end_step": 1717
+        },
+        {
+          "wave": 9,
+          "mob_type": "SKELETON",
+          "cleared": true,
+          "end_step": 2396
+        }
+      ]
+    }
+  ]
+}
